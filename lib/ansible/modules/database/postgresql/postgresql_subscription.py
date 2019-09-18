@@ -35,19 +35,46 @@ options:
     type: str
   connection:
     description:
-    -   
+    - The connection string to the publisher
   publication:
     description:
     - Names of the publications on the publisher to subscribe to.
-    
-  tables:
+  copy_data:
     description:
-    - List of tables to add to the publication.
-    - If no value is set all tables are targeted.
-    - If the publication already exists for specific tables and I(tables) is not passed,
-      nothing will be changed. If you need to add all tables to the publication with the same name,
-      drop existent and create new without passing I(tables).
-    type: list
+    - Specifies whether the existing data in the publications 
+      that are being subscribed to should be copied once the replication starts. 
+    type: bool
+    default: true
+  create_slot:
+    description:
+    - Specifies whether the command should create the replication slot on the publisher. 
+    type: bool
+    default: true 
+  enabled:
+    description:
+    - Specifies whether the subscription should be actively replicating, !!!!!!
+       or whether it should be just setup but not started yet. 
+    type: bool
+    default: true
+  slot_name:
+    description:
+    - Name of the replication slot to use. 
+      The default behavior is to use the name of the subscription for the slot name.
+    - When slot_name is set to NONE, there will be no replication slot associated with the subscription. 
+      This can be used if the replication slot will be created later manually. 
+      Such subscriptions must also have both enabled and create_slot set to false.  
+  synchronous_commit:
+    description:
+    - The value of this parameter overrides the synchronous_commit setting
+    type: bool
+    default: false
+  connect:
+    description:
+    - Specifies whether the CREATE SUBSCRIPTION should connect to the publisher at all. 
+    - Setting this to false will change default values of enabled, create_slot and copy_data to false.
+    - It is not allowed to combine connect set to false and enabled, create_slot, or copy_data set to true.      
+    type: bool
+    default: false    
   state:
     description:
     - The publication state.
@@ -55,42 +82,29 @@ options:
     choices: [ absent, present ]
     type: str
   parameters:
-    description:
-    - Dictionary with optional publication parameters.
-    - Available parameters depend on PostgreSQL version.
-    type: dict
-  owner:
-    description:
-    - Publication owner.
-    - If I(owner) is not defined, the owner will be set as I(login_user) or I(session_role).
-    type: str
-  cascade:
-    description:
-    - Drop publication dependencies. Has effect with I(state=absent) only.
-    type: bool
-    default: false
 notes:
 - PostgreSQL version must be 10 or greater.
 seealso:
-- name: CREATE PUBLICATION reference
-  description: Complete reference of the CREATE PUBLICATION command documentation.
-  link: https://www.postgresql.org/docs/current/sql-createpublication.html
-- name: ALTER PUBLICATION reference
-  description: Complete reference of the ALTER PUBLICATION command documentation.
-  link: https://www.postgresql.org/docs/current/sql-alterpublication.html
-- name: DROP PUBLICATION reference
-  description: Complete reference of the DROP PUBLICATION command documentation.
-  link: https://www.postgresql.org/docs/current/sql-droppublication.html
+- name: CREATE SUBSCRIPTION reference
+  description: Complete reference of the CREATE SUBSCRIPTION command documentation.
+  link: https://www.postgresql.org/docs/current/sql-createsubscription.html
+- name: ALTER SUBSCRIPTION reference
+  description: Complete reference of the ALTER SUBSCRIPTION command documentation.
+  link: https://www.postgresql.org/docs/current/sql-altersubscription.html
+- name: DROP SUBSCRIPTION reference
+  description: Complete reference of the DROP SUBSCRIPTION command documentation.
+  link: https://www.postgresql.org/docs/current/sql-dropsubscription.html
 author:
 - Loic Blot (@nerzhul) <loic.blot@unix-experience.fr>
 - Andrew Klychkov (@Andersson007) <aaklychkov@mail.ru>
+- Alexander Popov (@popov83) <popov83@gmail.com>
 extends_documentation_fragment:
 - postgres
 '''
 
 EXAMPLES = r'''
-- name: Create a new publication with name "acme" targeting all tables in database "test".
-  postgresql_publication:
+- name: Create a new subscription with name "acme" targeting all tables in database "test".
+  postgresql_subscription:
     db: test
     name: acme
 
@@ -130,7 +144,7 @@ EXAMPLES = r'''
 RETURN = r'''
 exists:
   description:
-  - Flag indicates the publication exists or not at the end of runtime.
+  - Flag indicates the subscription exists or not at the end of runtime.
   returned: always
   type: bool
   sample: true
@@ -144,21 +158,8 @@ owner:
   returned: if publication exists
   type: str
   sample: "alice"
-tables:
-  description:
-  - List of tables in the publication at the end of runtime.
-  - If all tables are published, returns empty list.
-  returned: if publication exists
-  type: list
-  sample: ["\"public\".\"prices\"", "\"public\".\"vehicles\""]
-alltables:
-  description:
-  - Flag indicates that all tables are published.
-  returned: if publication exists
-  type: bool
-  sample: false
 parameters:
-  description: Publication parameters at the end of runtime.
+  description: Subscription parameters at the end of runtime.
   returned: if publication exists
   type: dict
   sample: {'publish': {'insert': false, 'delete': false, 'update': true}}
@@ -209,20 +210,20 @@ def transform_tables_representation(tbl_list):
 
 
 class PgPublication():
-    """Class to work with PostgreSQL publication.
+    """Class to work with PostgreSQL subscription.
 
     Args:
         module (AnsibleModule): Object of AnsibleModule class.
         cursor (cursor): Cursor object of psycopg2 library to work with PostgreSQL.
-        name (str): The name of the publication.
+        name (str): The name of the subscription.
 
     Attributes:
         module (AnsibleModule): Object of AnsibleModule class.
         cursor (cursor): Cursor object of psycopg2 library to work with PostgreSQL.
-        name (str): Name of the publication.
+        name (str): Name of the subscription.
         executed_queries (list): List of executed queries.
-        attrs (dict): Dict with publication attributes.
-        exists (bool): Flag indicates the publication exists or not.
+        attrs (dict): Dict with subscription attributes.
+        exists (bool): Flag indicates the subscription exists or not.
     """
 
     def __init__(self, module, cursor, name):
