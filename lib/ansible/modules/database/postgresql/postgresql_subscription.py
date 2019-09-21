@@ -6,6 +6,7 @@
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from __future__ import absolute_import, division, print_function
+import pprint
 __metaclass__ = type
 
 
@@ -209,7 +210,7 @@ def transform_tables_representation(tbl_list):
     return tbl_list
 
 
-class PgPublication():
+class PgSubscription():
     """Class to work with PostgreSQL subscription.
 
     Args:
@@ -249,10 +250,10 @@ class PgPublication():
         return self.attrs
 
     def check_pub(self):
-        """Check the publication and refresh ``self.attrs`` publication attribute.
+        """Check the subscription and refresh ``self.attrs`` subscription attribute.
 
         Returns:
-            True if the publication with ``self.name`` exists, False otherwise.
+            True if the subscription with ``self.name`` exists, False otherwise.
         """
 
         pub_info = self.__get_general_pub_info()
@@ -423,30 +424,28 @@ class PgPublication():
             return self.__exec_sql(' '.join(query_fragments), check_mode=check_mode)
 
     def __get_general_pub_info(self):
-        """Get and return general publication information.
+        """Get and return general subscription information.
 
         Returns:
-            Dict with publication information if successful, False otherwise.
+            Dict with subscription information if successful, False otherwise.
         """
-        # Check pg_publication.pubtruncate exists (supported from PostgreSQL 11):
-        pgtrunc_sup = exec_sql(self, ("SELECT 1 FROM information_schema.columns "
-                                      "WHERE table_name = 'pg_publication' "
-                                      "AND column_name = 'pubtruncate'"), add_to_executed=False)
 
-        if pgtrunc_sup:
-            query = ("SELECT r.rolname AS pubowner, p.puballtables, p.pubinsert, "
-                     "p.pubupdate , p.pubdelete, p.pubtruncate FROM pg_publication AS p "
-                     "JOIN pg_catalog.pg_roles AS r "
-                     "ON p.pubowner = r.oid "
-                     "WHERE p.pubname = '%s'" % self.name)
-        else:
-            query = ("SELECT r.rolname AS pubowner, p.puballtables, p.pubinsert, "
-                     "p.pubupdate , p.pubdelete FROM pg_publication AS p "
-                     "JOIN pg_catalog.pg_roles AS r "
-                     "ON p.pubowner = r.oid "
-                     "WHERE p.pubname = '%s'" % self.name)
+        query = (" SELECT " 
+                    "r.rolname AS subowner, " 
+                    "s.subdbid, "
+                    "s.subname, "
+                    "s.subenabled, "
+                    "s.subsynccommit, "
+                    "s.subconninfo, "
+                    "s.subslotname, "
+                    "s.subpublications "
+                "FROM pg_subscription AS s " 
+                "JOIN pg_catalog.pg_roles AS r ON s.subowner = r.oid "
+                "WHERE s.subname = '%s'" % self.name)
 
         result = exec_sql(self, query, add_to_executed=False)
+        pprint.pprint('temp log: result' + str(result))
+
         if result:
             return result[0]
         else:
@@ -582,35 +581,41 @@ def main():
     argument_spec.update(
         name=dict(required=True),
         db=dict(type='str', aliases=['login_db']),
+        connection=dict(required=True,type='str'),
         state=dict(type='str', default='present', choices=['absent', 'present']),
-        tables=dict(type='list'),
-        parameters=dict(type='dict'),
-        owner=dict(type='str'),
-        cascade=dict(type='bool', default=False),
+        #todo add another arguments
+        #tables=dict(type='list'),
+        #parameters=dict(type='dict'),
+        #owner=dict(type='str'),
+        #cascade=dict(type='bool', default=False),
     )
     module = AnsibleModule(
         argument_spec=argument_spec,
         supports_check_mode=True,
     )
+    pprint.pprint('temp log: start')
+    pprint.pprint('temp log: module:' + str(module))
+
 
     # Parameters handling:
     name = module.params['name']
     state = module.params['state']
-    tables = module.params['tables']
-    params = module.params['parameters']
-    owner = module.params['owner']
-    cascade = module.params['cascade']
 
-    if state == 'absent':
-        if tables:
-            module.warn('parameter "tables" is ignored when "state=absent"')
-        if params:
-            module.warn('parameter "parameters" is ignored when "state=absent"')
-        if owner:
-            module.warn('parameter "owner" is ignored when "state=absent"')
+    #tables = module.params['tables']
+    #params = module.params['parameters']
+    #owner = module.params['owner']
+    #cascade = module.params['cascade']
 
-    if state == 'present' and cascade:
-        module.warm('parameter "cascade" is ignored when "state=present"')
+    #if state == 'absent':
+    #    if tables:
+    #        module.warn('parameter "tables" is ignored when "state=absent"')
+    #    if params:
+    #        module.warn('parameter "parameters" is ignored when "state=absent"')
+    #    if owner:
+    #        module.warn('parameter "owner" is ignored when "state=absent"')
+
+    #if state == 'present' and cascade:
+    #    module.warm('parameter "cascade" is ignored when "state=present"')
 
     # Connect to DB and make cursor object:
     conn_params = get_conn_params(module, module.params)
@@ -627,15 +632,15 @@ def main():
 
     ###################################
     # Create object and do rock'n'roll:
-    publication = PgPublication(module, cursor, name)
+    subscription = PgSubscription(module, cursor, name)
 
-    if tables:
-        tables = transform_tables_representation(tables)
+    #if tables:
+    #    tables = transform_tables_representation(tables)
 
     # If module.check_mode=True, nothing will be changed:
     if state == 'present':
-        if not publication.exists:
-            changed = publication.create(tables, params, owner, check_mode=module.check_mode)
+        if not subscription.exists:
+            changed = subscription.create(tables, params, owner, check_mode=module.check_mode)
 
         else:
             changed = publication.update(tables, params, owner, check_mode=module.check_mode)
