@@ -222,20 +222,25 @@ class PgSubscription():
         module (AnsibleModule): Object of AnsibleModule class.
         cursor (cursor): Cursor object of psycopg2 library to work with PostgreSQL.
         name (str): Name of the subscription.
+        connection (str): The connection string to the publisher
         executed_queries (list): List of executed queries.
         attrs (dict): Dict with subscription attributes.
         exists (bool): Flag indicates the subscription exists or not.
     """
 
-    def __init__(self, module, cursor, name):
+    def __init__(self, module, cursor, name, connection):
         self.module = module
         self.cursor = cursor
         self.name = name
+        self.connection = connection
         self.executed_queries = []
         self.attrs = {
-            'alltables': False,
-            'tables': [],
-            'parameters': {},
+            'copy_data': True,
+            'create_slot': True,
+            'enabled': True,
+            'slot_name': '',
+            'synchronous_commit': False,
+            'connect': False,
             'owner': '',
         }
         self.exists = self.check_pub()
@@ -249,40 +254,27 @@ class PgSubscription():
         self.exists = self.check_pub()
         return self.attrs
 
-    def check_pub(self):
+    def check_sub(self):
         """Check the subscription and refresh ``self.attrs`` subscription attribute.
 
         Returns:
             True if the subscription with ``self.name`` exists, False otherwise.
         """
 
-        pub_info = self.__get_general_pub_info()
+        sub_info = self.__get_general_sub_info()
 
-        if not pub_info:
+        if not sub_info:
             # Publication does not exist:
             return False
 
-        self.attrs['owner'] = pub_info.get('pubowner')
+        self.attrs['owner'] = sub_info.get('subowner')
 
-        # Publication DML operations:
-        self.attrs['parameters']['publish'] = {}
-        self.attrs['parameters']['publish']['insert'] = pub_info.get('pubinsert', False)
-        self.attrs['parameters']['publish']['update'] = pub_info.get('pubupdate', False)
-        self.attrs['parameters']['publish']['delete'] = pub_info.get('pubdelete', False)
-        if pub_info.get('pubtruncate'):
-            self.attrs['parameters']['publish']['truncate'] = pub_info.get('pubtruncate')
-
-        # If alltables flag is False, get the list of targeted tables:
-        if not pub_info.get('puballtables'):
-            table_info = self.__get_tables_pub_info()
-            # Join sublists [['schema', 'table'], ...] to ['schema.table', ...]
-            # for better representation:
-            for i, schema_and_table in enumerate(table_info):
-                table_info[i] = pg_quote_identifier('.'.join(schema_and_table), 'table')
-
-            self.attrs['tables'] = table_info
-        else:
-            self.attrs['alltables'] = True
+        # Subscription  attribute:
+        self.attrs['parameters']['subscript'] = {}
+        self.attrs['parameters']['subscript']['enabled'] = sub_info.get('subenabled', True)
+        self.attrs['parameters']['subscript']['synccommit'] = sub_info.get('subsynccommit', False)
+        self.attrs['parameters']['subscript']['slotname'] = sub_info.get('subslotname', '')
+        self.attrs['parameters']['subscript']['publications'] = sub_info.get('subpublications', '')
 
         # Publication exists:
         return True
@@ -423,7 +415,7 @@ class PgSubscription():
 
             return self.__exec_sql(' '.join(query_fragments), check_mode=check_mode)
 
-    def __get_general_pub_info(self):
+    def __get_general_sub_info(self):
         """Get and return general subscription information.
 
         Returns:
@@ -451,7 +443,7 @@ class PgSubscription():
         else:
             return False
 
-    def __get_tables_pub_info(self):
+    def __get_tables_sub_info(self):
         """Get and return tables that are published by the publication.
 
         Returns:
@@ -600,7 +592,7 @@ def main():
     # Parameters handling:
     name = module.params['name']
     state = module.params['state']
-
+    # tod add checks
     #tables = module.params['tables']
     #params = module.params['parameters']
     #owner = module.params['owner']
