@@ -40,6 +40,7 @@ options:
   publication:
     description:
     - Names of the publications on the publisher to subscribe to.
+    type: list
   copy_data:
     description:
     - Specifies whether the existing data in the publications 
@@ -228,11 +229,12 @@ class PgSubscription():
         exists (bool): Flag indicates the subscription exists or not.
     """
 
-    def __init__(self, module, cursor, name, connection):
+    def __init__(self, module, cursor, name, connection, publication):
         self.module = module
         self.cursor = cursor
         self.name = name
         self.connection = connection
+        self.publication = publication
         self.executed_queries = []
         self.attrs = {
             'copy_data': True,
@@ -243,7 +245,7 @@ class PgSubscription():
             'connect': False,
             'owner': '',
         }
-        self.exists = self.check_pub()
+        self.exists = self.check_sub()
 
     def get_info(self):
         """Refresh the publication information.
@@ -251,7 +253,7 @@ class PgSubscription():
         Returns:
             ``self.attrs``.
         """
-        self.exists = self.check_pub()
+        self.exists = self.check_sub()
         return self.attrs
 
     def check_sub(self):
@@ -279,12 +281,13 @@ class PgSubscription():
         # Publication exists:
         return True
 
-    def create(self, tables, params, owner, check_mode=True):
-        """Create the publication.
+    def create(self, connection, publication, owner, check_mode=True):
+        """Create the subscription.
 
         Args:
-            tables (list): List with names of the tables that need to be added to the publication.
-            params (dict): Dict contains optional publication parameters and their values.
+            connection (str): The connection string to the publisher
+            publication (list): Names of the publications on the publisher to subscribe to.
+            params (dict): Dict contains optional subscription parameters and their values.
             owner (str): Name of the publication owner.
 
         Kwargs:
@@ -296,7 +299,13 @@ class PgSubscription():
         """
         changed = True
 
-        query_fragments = ["CREATE PUBLICATION %s" % pg_quote_identifier(self.name, 'publication')]
+        query_fragments = ["CREATE SUBSCRIPTION %s"
+                            % pg_quote_identifier(self.name, 'publication')
+                            % pg_quote_identifier(self.connection, 'connection')
+                            % pg_quote_identifier(self.publication, 'publication')
+                           ]
+        pprint.pprint('temp log: query_fragments' + str(query_fragments))
+
 
         if tables:
             query_fragments.append("FOR TABLE %s" % ', '.join(tables))
@@ -575,6 +584,7 @@ def main():
         db=dict(type='str', aliases=['login_db']),
         connection=dict(required=True,type='str'),
         state=dict(type='str', default='present', choices=['absent', 'present']),
+        publication=dict(type='list',required=True)
         #todo add another arguments
         #tables=dict(type='list'),
         #parameters=dict(type='dict'),
@@ -592,6 +602,8 @@ def main():
     # Parameters handling:
     name = module.params['name']
     state = module.params['state']
+    connection = module.params['connection']
+    publication = module.params['publication']
     # tod add checks
     #tables = module.params['tables']
     #params = module.params['parameters']
@@ -624,7 +636,7 @@ def main():
 
     ###################################
     # Create object and do rock'n'roll:
-    subscription = PgSubscription(module, cursor, name)
+    subscription = PgSubscription(module, cursor, name, connection, publication)
 
     #if tables:
     #    tables = transform_tables_representation(tables)
