@@ -47,6 +47,7 @@ _PG_IDENTIFIER_TO_DOT_LEVEL = dict(
     tablespace=1,
     sequence=3,
     publication=1,
+    subscription=1
 )
 _MYSQL_IDENTIFIER_TO_DOT_LEVEL = dict(database=1, table=2, column=3, role=1, vars=1)
 

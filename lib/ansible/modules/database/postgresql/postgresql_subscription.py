@@ -281,12 +281,10 @@ class PgSubscription():
         # Publication exists:
         return True
 
-    def create(self, connection, publication, owner, check_mode=True):
+    def create(self,params, owner, check_mode=True):
         """Create the subscription.
 
         Args:
-            connection (str): The connection string to the publisher
-            publication (list): Names of the publications on the publisher to subscribe to.
             params (dict): Dict contains optional subscription parameters and their values.
             owner (str): Name of the publication owner.
 
@@ -297,21 +295,24 @@ class PgSubscription():
         Returns:
             changed (bool): True if publication has been created, otherwise False.
         """
-        changed = True
+        pprint.pprint('temp log: name ' + str(self.name))
+        pprint.pprint('temp log: connection ' + str(self.connection))
+        pprint.pprint('temp log: publication ' + str(self.publication))
 
-        query_fragments = ["CREATE SUBSCRIPTION %s"
-                            % pg_quote_identifier(self.name, 'publication')
-                            % pg_quote_identifier(self.connection, 'connection')
-                            % pg_quote_identifier(self.publication, 'publication')
-                           ]
+        changed = True
+        query_fragments = ["CREATE SUBSCRIPTION %s CONNECTION '%s' PUBLICATION %s" %
+                            (   pg_quote_identifier(self.name, 'subscription'),
+                                self.connection,
+                                ', '.join(self.publication),
+                            )
+                           ] # todo add array in publication
         pprint.pprint('temp log: query_fragments' + str(query_fragments))
 
 
-        if tables:
-            query_fragments.append("FOR TABLE %s" % ', '.join(tables))
-        else:
-            query_fragments.append("FOR ALL TABLES")
 
+
+
+        #todo
         if params:
             params_list = []
             # Make list ["param = 'value'", ...] from params dict:
@@ -584,11 +585,11 @@ def main():
         db=dict(type='str', aliases=['login_db']),
         connection=dict(required=True,type='str'),
         state=dict(type='str', default='present', choices=['absent', 'present']),
-        publication=dict(type='list',required=True)
+        publication=dict(type='list',required=True),
         #todo add another arguments
         #tables=dict(type='list'),
-        #parameters=dict(type='dict'),
-        #owner=dict(type='str'),
+        parameters=dict(type='dict'),
+        owner=dict(type='str'),
         #cascade=dict(type='bool', default=False),
     )
     module = AnsibleModule(
@@ -604,7 +605,11 @@ def main():
     state = module.params['state']
     connection = module.params['connection']
     publication = module.params['publication']
-    # tod add checks
+    params = module.params['parameters']
+    owner = module.params['owner']
+
+
+    # todo add checks
     #tables = module.params['tables']
     #params = module.params['parameters']
     #owner = module.params['owner']
@@ -640,11 +645,12 @@ def main():
 
     #if tables:
     #    tables = transform_tables_representation(tables)
+    pprint.pprint('temp log: module.check_mode' + str(module.check_mode))
 
     # If module.check_mode=True, nothing will be changed:
     if state == 'present':
         if not subscription.exists:
-            changed = subscription.create(tables, params, owner, check_mode=module.check_mode)
+            changed = subscription.create( params, owner, check_mode=module.check_mode)
 
         else:
             changed = publication.update(tables, params, owner, check_mode=module.check_mode)
